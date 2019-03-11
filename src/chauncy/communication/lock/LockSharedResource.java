@@ -1,4 +1,8 @@
-package chauncy.communication;
+package chauncy.communication.lock;
+
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * 
@@ -12,6 +16,10 @@ class Res {
 	public String sex;
 	// flag为false表示out线程未读取值
 	public boolean flag = false;
+	// 创建重入锁Lock对象，多线程之间通讯一定要定义成单例锁，保持多线程间只有一个一样的锁
+	public Lock lock = new ReentrantLock();
+	// Lock锁不能使用wait，所以需要创建cdotion对象调用await方法
+	Condition condition = lock.newCondition();
 }
 
 /**
@@ -32,13 +40,13 @@ class InputThread extends Thread {
 	public void run() {
 		int count = 0;
 		while (true) {
-			synchronized (res) {
+			try {
+				// 获取锁的资源
+				res.lock.lock();
 				if (res.flag) {
-					// 当前线程等待，wait()可以让当前线程从运行状态变为休眠状态，类似于Thread.sleep()，但是sleep和wait有本质上区别
-					// wait使用在多线程之间同步 和synchronized一起用，可以释放锁，而sleep不能释放锁
 					try {
-						res.wait();
-					} catch (InterruptedException e) {
+						res.condition.await();
+					} catch (Exception e) {
 					}
 				}
 				if (count == 0) {
@@ -51,8 +59,11 @@ class InputThread extends Thread {
 				// 实现奇数和偶数
 				count = (count + 1) % 2;
 				res.flag = true;
-				// 和wait一起使用，唤起另一个线程，唤醒：就是使线程从阻塞转台变成运行状态
-				res.notify();
+				res.condition.signal();
+			} catch (Exception e) {
+			} finally {
+				// 释放锁资源，为了防止产生异常后锁无法释放，
+				res.lock.unlock();
 			}
 		}
 	}
@@ -75,16 +86,20 @@ class OutThread extends Thread {
 	@Override
 	public void run() {
 		while (true) {
-			synchronized (res) {
+			try {
+				res.lock.lock();
 				if (!res.flag) {
 					try {
-						res.wait();
-					} catch (InterruptedException e) {
+						res.condition.await();
+					} catch (Exception e) {
 					}
 				}
 				System.out.println(res.name + "----" + res.sex);
 				res.flag = false;
-				res.notify();
+				res.condition.signal();
+			} catch (Exception e) {
+			} finally {
+				res.lock.unlock();
 			}
 		}
 	}
@@ -96,7 +111,7 @@ class OutThread extends Thread {
  * @createTime: 2019年3月8日 上午12:14:54
  * @verssion: v1.0
  */
-public class ThreadDemo01 {
+public class LockSharedResource {
 	public static void main(String[] args) {
 		Res res = new Res();
 		InputThread inputThread = new InputThread(res);
